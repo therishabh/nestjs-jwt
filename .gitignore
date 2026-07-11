@@ -36,7 +36,11 @@ lerna-debug.log*
 !.vscode/extensions.json
 
 # dotenv environment variable files
+# Only .env.example is committed; every environment's real file is local-only.
 .env
+.env.development
+.env.production
+.env.test
 .env.development.local
 .env.test.local
 .env.production.local

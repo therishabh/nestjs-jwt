@@ -32,4 +32,19 @@ export default tseslint.config(
       "prettier/prettier": ["error", { endOfLine: "auto" }],
     },
   },
+  {
+    // Test files legitimately do things production code shouldn't: assert
+    // on `jest.fn()` method references without calling them (which trips
+    // unbound-method) and read untyped HTTP response bodies (which trips
+    // the no-unsafe-* family). Relaxing these here keeps the strict rules
+    // meaningful for src/ without fighting normal test patterns.
+    files: ['**/*.spec.ts', 'test/**/*.ts'],
+    rules: {
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+    },
+  },
 );

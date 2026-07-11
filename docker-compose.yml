@@ -1,0 +1,44 @@
+services:
+  api:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_PREFIX: api/v1
+      CORS_ORIGIN: '*'
+      # For local docker-compose only — a real deployment points this at
+      # MongoDB Atlas instead of the bundled `mongo` service below.
+      MONGODB_URI: mongodb://mongo:27017/nest-jwt
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set a 32+ char secret in a .env file}
+      JWT_ACCESS_EXPIRATION: 15m
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?set a 32+ char secret in a .env file}
+      JWT_REFRESH_EXPIRATION: 7d
+      BCRYPT_SALT_ROUNDS: 12
+      THROTTLE_TTL: 60
+      THROTTLE_LIMIT: 20
+      RESET_PASSWORD_TOKEN_EXPIRATION_MINUTES: 15
+      EMAIL_VERIFICATION_TOKEN_EXPIRATION_HOURS: 24
+      ACCOUNT_LOCK_MAX_ATTEMPTS: 5
+      ACCOUNT_LOCK_DURATION_MINUTES: 15
+      FRONTEND_URL: http://localhost:5173
+    depends_on:
+      mongo:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo-data:

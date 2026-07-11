@@ -1,98 +1,100 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Nest JWT Auth API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A production-style authentication service built with NestJS, MongoDB (Mongoose), and JWT. Implements registration, login, refresh-token rotation, logout, change/forgot/reset password, email verification, role-based authorization, and account lockout — with the surrounding infrastructure (config validation, structured logging, global error handling, rate limiting, Swagger docs, Docker) that a real deployment needs.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Architecture
 
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```
+src/
+  config/         Typed, validated environment configuration (per-namespace: app, database, jwt, security, mail)
+  common/         Cross-cutting building blocks shared by every feature module
+    constants/    Metadata keys, regex patterns — no magic strings/numbers scattered around
+    decorators/   @Public, @Roles, @CurrentUser, @RawResponse
+    dto/          Shared DTOs (pagination)
+    enums/        Role, TokenType
+    exceptions/   Domain-specific HttpException subclasses
+    filters/      Global exception filter -> { success, message, errors } envelope
+    guards/       JwtAuthGuard (global), RolesGuard
+    interceptors/ Response envelope, request logging
+    interfaces/   JwtPayload, AuthenticatedUser, ApiResponse shapes
+    middlewares/  Request-ID tagging, NoSQL-injection sanitization
+    utils/        Password hashing, secure token generation, pagination helpers
+  database/       Mongoose connection setup + admin seed script
+  logger/         Structured AppLogger (implements Nest's LoggerService)
+  mail/           Mail service (stub transport — see "Email" below)
+  users/          User schema/service + Profile and admin Users controllers
+  auth/           Registration, login, tokens, password flows, JWT strategy
+  health/         Liveness/readiness endpoint (Terminus + MongoDB ping)
 ```
 
-## Compile and run the project
+**Why this shape:** `AuthModule` owns *authentication* (proving identity, issuing/rotating tokens); `UsersModule` owns the *user resource* (profile, admin user list) via a repository-style `UsersService` that is the only code talking to the Mongoose model directly. Cross-cutting concerns (logging, error formatting, response envelope, config) live in `common/`, `logger/`, and `config/` so feature modules stay focused on business logic.
+
+## Request pipeline
+
+Every request passes through, in order:
+
+1. **RequestIdMiddleware** — tags the request with a UUID (`X-Request-Id`), for tracing one request across logs.
+2. **MongoSanitizeMiddleware** — strips `$`/`.`-prefixed keys from body/params/query to block NoSQL operator injection.
+3. **ThrottlerGuard** (global) — rate limits by IP, thresholds from `THROTTLE_TTL`/`THROTTLE_LIMIT`.
+4. **JwtAuthGuard** (global) — requires a valid access token unless the route is `@Public()`.
+5. **RolesGuard** (per-controller, e.g. `UsersController`) — restricts to specific `@Roles(...)`.
+6. **ValidationPipe** (global) — validates/transforms the body against its DTO; rejects unknown properties.
+7. **LoggingInterceptor** → **ResponseInterceptor** — logs the request, then wraps the result as `{ success: true, message, data }` (or lets it through raw if `@RawResponse()`, e.g. `/health`).
+8. **AllExceptionsFilter** (global) — catches everything else and formats it as `{ success: false, message, errors }`, logging the real detail server-side without leaking it to the client.
+
+## Setup
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
+cp .env.example .env          # fill in a real MONGODB_URI and generate secrets:
+openssl rand -base64 48       # run twice, for JWT_ACCESS_SECRET and JWT_REFRESH_SECRET
 ```
 
-## Run tests
+`.env`, `.env.development`, `.env.production` are gitignored — only `.env.example` is committed. The app **refuses to start** if any required variable is missing or invalid (see `src/config/env.validation.ts`); this is deliberate — a misconfigured deployment should fail at boot, not mid-request.
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm run start:dev     # watch mode
+npm run build && npm run start:prod
 ```
 
-## Deployment
+Swagger UI is served at `/docs` in non-production environments (`NODE_ENV=production` disables it). API routes are versioned under `/api/v1` (configurable via `API_PREFIX`).
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+### Creating the first admin
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+There is no API endpoint that creates ADMIN users — an unauthenticated "make me an admin" endpoint would be a privilege-escalation hole. Instead:
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='Str0ng!AdminPW' npm run seed:admin
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+## Testing
 
-## Resources
+```bash
+npm test              # unit tests (mocked dependencies)
+npm run test:e2e      # e2e tests against an in-memory MongoDB (mongodb-memory-server) — no real DB needed
+npm run test:cov      # coverage
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+## Docker
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+# create a .env with JWT_ACCESS_SECRET / JWT_REFRESH_SECRET before running
+docker compose up --build
+```
 
-## Support
+Runs the API alongside a bundled MongoDB container, for local use. Point `MONGODB_URI` at MongoDB Atlas instead for anything beyond local development.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+> Docker was not available in the environment this project was built in, so the `Dockerfile`/`docker-compose.yml` are written to the documented multi-stage/non-root/healthcheck conventions but have not been build-tested here — verify with `docker compose up --build` before relying on them.
 
-## Stay in touch
+## Security notes
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+- Passwords hashed with bcrypt (`BCRYPT_SALT_ROUNDS`, tune per environment).
+- Refresh, password-reset, and email-verification tokens are never stored raw — only their SHA-256 hash, so a database leak alone doesn't yield usable tokens.
+- Refresh tokens rotate on every use; reusing an already-rotated token revokes the entire session (treated as possible theft), not just that one token.
+- Accounts lock for `ACCOUNT_LOCK_DURATION_MINUTES` after `ACCOUNT_LOCK_MAX_ATTEMPTS` failed logins.
+- `forgot-password` responds identically whether or not the email exists, to prevent account enumeration.
+- `helmet()`, `compression()`, and CORS are applied in `main.ts`; rate limiting is global and configurable.
 
-## License
+## Email
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+No real email provider is wired up — `MailService` logs what it would send (see `src/mail/mail.service.ts`). Swap its two `deliver`-calling methods for a real provider (SMTP/SendGrid/SES) when one is chosen; every caller (registration, forgot-password) already depends only on `MailService`'s interface.

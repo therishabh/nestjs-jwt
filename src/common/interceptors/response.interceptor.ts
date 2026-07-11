@@ -30,6 +30,15 @@ export class ResponseInterceptor<T> implements NestInterceptor<
 > {
   constructor(private readonly reflector: Reflector) {}
 
+  /**
+   * A Nest Interceptor wraps around a route handler's execution: `next.handle()`
+   * returns an RxJS `Observable` of whatever the controller returned, and
+   * `.pipe(map(...))` transforms that value before it becomes the HTTP
+   * response body — this is what lets the envelope be applied without
+   * every controller doing it manually. `@RawResponse()`-marked routes
+   * (e.g. `/health`) skip the transform entirely, since external tooling
+   * expects their native response shape.
+   */
   intercept(
     context: ExecutionContext,
     next: CallHandler<T>,

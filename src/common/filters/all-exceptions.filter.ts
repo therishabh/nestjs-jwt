@@ -42,6 +42,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
     response.status(status).json(body);
   }
 
+  /**
+   * Maps any thrown value to an HTTP status + client-safe message/errors.
+   * Handles, in order: Nest's `HttpException` (including class-validator's
+   * array-of-messages shape from the `ValidationPipe`), raw Mongoose
+   * validation/cast errors (in case one escapes a service un-wrapped), a
+   * MongoDB duplicate-key error (code 11000), and finally an opaque 500 for
+   * anything else — never surfacing an unrecognized error's own message,
+   * since it wasn't written with an end user in mind.
+   */
   private resolve(exception: unknown): {
     status: number;
     message: string;

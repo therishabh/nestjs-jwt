@@ -22,6 +22,16 @@ export interface CreateUserInput {
  * for "find an active, non-deleted user by email" is defined once, and if
  * the soft-delete convention ever changes, one file needs to change instead
  * of every caller that queries users.
+ *
+ * Two conventions apply throughout this class:
+ * - **Soft delete**: every read filters `isDeleted: false`; {@link softDelete}
+ *   only flags a row, it never issues a physical `deleteOne`. This preserves
+ *   referential integrity/audit history and makes deletion reversible.
+ * - **Hidden-by-default fields**: `password`, `refreshTokenHash`, and the
+ *   password-reset/email-verification token hashes are declared
+ *   `select: false` on the schema, so plain queries never fetch them. Methods
+ *   ending in `WithSecrets`, or that need to check a specific hash, opt back
+ *   in with an explicit `.select('+field')`.
  */
 @Injectable()
 export class UsersService {
@@ -29,6 +39,16 @@ export class UsersService {
     @InjectModel(User.name) private readonly userModel: Model<User>,
   ) {}
 
+  /**
+   * Persists a new user. Expects an already-bcrypt-hashed password —
+   * hashing is AuthService's responsibility, not this layer's, so this
+   * service never touches a plaintext password.
+   *
+   * Email is lowercased/trimmed here (in addition to the schema's
+   * `lowercase: true`) so every lookup method that also normalizes its
+   * input (`findByEmail`, etc.) reliably matches what was stored,
+   * regardless of the casing/whitespace a client submitted.
+   */
   async create(input: CreateUserInput): Promise<UserDocument> {
     return this.userModel.create({
       firstName: input.firstName,
@@ -109,6 +129,16 @@ export class UsersService {
       .exec();
   }
 
+  /**
+   * Increments the failed-login counter and, once it reaches `maxAttempts`,
+   * sets `lockUntil` to lock the account for `lockDurationMinutes`. This is
+   * the account-lockout defense against credential-stuffing/brute-force
+   * login attempts, independent of the global IP-based rate limiter — an
+   * attacker distributing attempts across many IPs still gets locked out
+   * per-account.
+   *
+   * @returns Whether this attempt caused the account to become locked, and until when.
+   */
   async registerFailedLoginAttempt(
     id: string,
     maxAttempts: number,
@@ -175,6 +205,14 @@ export class UsersService {
       .exec();
   }
 
+  /**
+   * Looks up a user by their password-reset token hash, requiring the
+   * stored expiry to still be in the future. Folding the expiry check into
+   * the query itself (rather than fetching by hash and checking the date
+   * in application code) means an expired token behaves identically to an
+   * unknown one — a single `InvalidResetTokenException` in AuthService
+   * covers both cases without extra branching.
+   */
   async findByPasswordResetTokenHash(
     tokenHash: string,
   ): Promise<UserDocument | null> {
@@ -215,6 +253,7 @@ export class UsersService {
       .exec();
   }
 
+  /** Same hash-plus-expiry-in-one-query pattern as {@link findByPasswordResetTokenHash}. */
   async findByEmailVerificationTokenHash(
     tokenHash: string,
   ): Promise<UserDocument | null> {
@@ -243,6 +282,7 @@ export class UsersService {
       .exec();
   }
 
+  /** Admin-only paginated user list (see `UsersController`), with an optional case-insensitive name/email search. */
   async listUsers(query: PaginationQueryDto) {
     const searchFilter = buildSearchFilter<User>(query.search, [
       'firstName',
@@ -257,6 +297,7 @@ export class UsersService {
     );
   }
 
+  /** Flags the user as deleted without removing the document — see the soft-delete note on the class doc above. */
   async softDelete(id: string): Promise<void> {
     await this.userModel
       .updateOne(

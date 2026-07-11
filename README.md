@@ -2,6 +2,31 @@
 
 A production-style authentication service built with NestJS, MongoDB (Mongoose), and JWT. Implements registration, login, refresh-token rotation, logout, change/forgot/reset password, email verification, role-based authorization, and account lockout — with the surrounding infrastructure (config validation, structured logging, global error handling, rate limiting, Swagger docs, Docker) that a real deployment needs.
 
+## Developer Documentation
+
+New developers should start here:
+
+**[New Developer Guide](./docs/new-developer-guide.md)** — setup, environment configuration, running the app, running tests, learning order, common mistakes, and a debugging guide.
+
+Additional documentation (each covers one topic in depth, with file references and diagrams):
+
+- [Project Structure](./docs/project-structure.md) — what belongs in each folder
+- [Architecture](./docs/architecture.md) — layers, module graph, request-flow diagram
+- [Request Lifecycle](./docs/request-lifecycle.md) — what happens to a request, middleware to response
+- [Authentication Flow](./docs/authentication-flow.md) — index of every auth flow, with a reading order
+- [JWT Token Flow](./docs/jwt-token-flow.md) — this project's JWT payload, signing, and verification
+- [Refresh Token Flow](./docs/refresh-token-flow.md) — why refresh tokens are hashed, rotation, reuse detection
+- [Registration Flow](./docs/registration-flow.md) · [Login Flow](./docs/login-flow.md) · [Profile Flow](./docs/profile-flow.md)
+- [Password Management](./docs/password-management.md) — change / forgot / reset password
+- [Authorization and Roles](./docs/authorization-and-roles.md) — `@Public()`, `@Roles()`, guards
+- [Database and Schema](./docs/database-and-schema.md) — full `User` schema field reference
+- [Error Handling](./docs/error-handling.md) — response envelope, exception filter, custom exceptions
+- [Security](./docs/security.md) — every security decision, why, and where it's implemented
+- [Environment Configuration](./docs/environment-configuration.md) — every environment variable
+- [API Reference](./docs/api-flow.md) — full endpoint table
+
+See [docs/README.md](./docs/README.md) for the full index.
+
 ## Architecture
 
 ```
@@ -27,7 +52,9 @@ src/
   health/         Liveness/readiness endpoint (Terminus + MongoDB ping)
 ```
 
-**Why this shape:** `AuthModule` owns *authentication* (proving identity, issuing/rotating tokens); `UsersModule` owns the *user resource* (profile, admin user list) via a repository-style `UsersService` that is the only code talking to the Mongoose model directly. Cross-cutting concerns (logging, error formatting, response envelope, config) live in `common/`, `logger/`, and `config/` so feature modules stay focused on business logic.
+**Why this shape:** `AuthModule` owns _authentication_ (proving identity, issuing/rotating tokens); `UsersModule` owns the _user resource_ (profile, admin user list) via a repository-style `UsersService` that is the only code talking to the Mongoose model directly. Cross-cutting concerns (logging, error formatting, response envelope, config) live in `common/`, `logger/`, and `config/` so feature modules stay focused on business logic.
+
+> See [docs/project-structure.md](./docs/project-structure.md) for what belongs in each folder, and [docs/architecture.md](./docs/architecture.md) for the module dependency graph and layer responsibilities.
 
 ## Request pipeline
 
@@ -41,6 +68,8 @@ Every request passes through, in order:
 6. **ValidationPipe** (global) — validates/transforms the body against its DTO; rejects unknown properties.
 7. **LoggingInterceptor** → **ResponseInterceptor** — logs the request, then wraps the result as `{ success: true, message, data }` (or lets it through raw if `@RawResponse()`, e.g. `/health`).
 8. **AllExceptionsFilter** (global) — catches everything else and formats it as `{ success: false, message, errors }`, logging the real detail server-side without leaking it to the client.
+
+> See [docs/request-lifecycle.md](./docs/request-lifecycle.md) for a diagram and full detail, and [docs/error-handling.md](./docs/error-handling.md) for exactly how errors are mapped to responses.
 
 ## Setup
 

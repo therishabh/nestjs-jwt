@@ -16,6 +16,15 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     super();
   }
 
+  /**
+   * A Nest Guard's `canActivate` decides, before the route handler runs,
+   * whether the request is allowed through — returning `false` (or
+   * throwing) short-circuits the request with a 401/403 and the
+   * controller method never executes. `AuthGuard('jwt')` (from
+   * `@nestjs/passport`) already implements this by running
+   * {@link JwtStrategy} under the hood; this override just adds the
+   * `@Public()` bypass in front of that default behavior.
+   */
   canActivate(context: ExecutionContext) {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),

@@ -20,6 +20,19 @@ import { Public } from '../common/decorators/public.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../common/interfaces/authenticated-user.interface';
 
+/**
+ * HTTP surface for every authentication flow. Deliberately thin: each
+ * handler validates input (via DTOs + the global ValidationPipe), delegates
+ * to {@link AuthService} for all business logic, and shapes the result as
+ * `{ message, data }` — the global `ResponseInterceptor` (see
+ * `src/common/interceptors/response.interceptor.ts`) wraps that into the
+ * project-wide `{ success, message, data }` envelope, so handlers never
+ * build the envelope themselves.
+ *
+ * Routes are protected by the global `JwtAuthGuard` by default; `@Public()`
+ * opts out for the handful of routes that must work without a token
+ * (register, login, refresh, forgot/reset-password, verify-email).
+ */
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {

@@ -77,6 +77,11 @@ export class User {
   @Prop({ default: 0 })
   failedLoginAttempts: number;
 
+  // Presence + being in the future means "locked" (see AuthService.login);
+  // absence (or a past date) means not locked. Cleared automatically on the
+  // next successful login (UsersService.recordSuccessfulLogin) rather than
+  // via a scheduled job — there's no need to eagerly unlock an account
+  // nobody is trying to use.
   @Prop()
   lockUntil?: Date;
 
@@ -104,8 +109,18 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
+// Every read in UsersService filters on `isDeleted`, so this index keeps
+// that filter (and the admin user list, which also filters on it) fast as
+// the collection grows, instead of scanning every document.
 UserSchema.index({ isDeleted: 1 });
 
+// `select: false` on a field (password, token hashes, etc.) only stops it
+// from being *fetched* by default — it says nothing about serialization.
+// If a query explicitly re-selects one of those fields (as the `WithSecrets`
+// methods in UsersService do) and the resulting document is ever handed to
+// `res.json()` without going through this transform, the field would leak.
+// This transform is the last line of defense: it strips those fields from
+// every `toJSON()` call regardless of how the document was fetched.
 UserSchema.set('toJSON', {
   virtuals: true,
   transform: ((_doc: unknown, ret: Record<string, unknown>) => {

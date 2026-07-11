@@ -24,6 +24,12 @@ export class ProfileController {
     return { message: 'Profile fetched successfully', data: user };
   }
 
+  // `UpdateProfileDto` only declares firstName/lastName/phoneNumber/avatar.
+  // Combined with the global ValidationPipe's `forbidNonWhitelisted`, a
+  // request body containing `email`, `password`, or `role` is rejected
+  // outright (400) rather than silently ignored — those fields have their
+  // own dedicated, more carefully guarded flows (change-password, and no
+  // self-service endpoint at all for role).
   @Put()
   @ApiOperation({ summary: 'Update the current user profile' })
   async updateProfile(

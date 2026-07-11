@@ -34,6 +34,16 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     });
   }
 
+  /**
+   * Called by Passport after the JWT's signature and expiry already
+   * checked out. Not a place to re-verify the token — only to decide
+   * whether the (now-trusted) payload still corresponds to a usable
+   * account.
+   *
+   * @param payload - The decoded, verified JWT payload (`{ sub, email, role }`).
+   * @returns The object Passport attaches as `request.user` — consumed by `@CurrentUser()` and `RolesGuard`.
+   * @throws UnauthorizedException When the user has been deleted or deactivated since the token was issued.
+   */
   async validate(payload: JwtPayload): Promise<AuthenticatedUser> {
     const user = await this.usersService.findActiveById(payload.sub);
     if (!user || !user.isActive) {
